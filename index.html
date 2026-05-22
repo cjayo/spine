@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
+<link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Spine</h1>
+    <p>Upload your comic page images. Page numbers are then detected with OCR and an EPUB is built — all in within your browser. </p>
+    <div class="badge">🔒 Your files never leave this machine</div>
+  </header>
+
+  <div class="card">
+  <div class="row">
+    <div><label for="title">Title</label><input type="text" id="title" placeholder="Untitled Comic"></div>
+    <div><label for="author">Author</label><input type="text" id="author" placeholder="Optional"></div>
+  </div>
+
+  <details class="advanced-section">
+    <summary>⚙ Advanced options</summary>
+
+    <div class="row">
+      <div>
+        <label for="lang">Comic Language</label>
+        <select id="lang">
+          <option value="eng" selected>English</option>
+        </select>
+      </div>
+      <div>
+        <label for="ocrScale">OCR Upscaler</label>
+        <select id="ocrScale">
+          <option value="1">1x (fast, less accurate)</option>
+          <option value="2" selected>2x (recommended)</option>
+          <option value="3">3x (slow, more accurate)</option>
+        </select>
+      </div>
+    </div>
+
+    <label style="display: flex; align-items: center; gap: 8px; margin-top: 16px; cursor: pointer;">
+      <input type="checkbox" id="skipOCR" style="width: auto;"><span>Use filename order (skip OCR)</span>
+    </label>
+    <label style="display: flex; align-items: center; gap: 8px; margin-top: 8px; cursor: pointer;">
+      <input type="checkbox" id="debugMode" style="width: auto;"><span>Debug mode</span>
+    </label>
+
+    <div class="row">
+      <div><label for="series">Series</label><input type="text" id="series" placeholder="e.g. My Webcomic"></div>
+      <div><label for="volume">Volume</label><input type="number" id="volume" placeholder="1" min="1"></div>
+    </div>
+
+    
+  </details>
+</div>
+
+
+  <div class="card" id="uploadCard">
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">📁</div>
+      <div><strong>Drag & drop comic pages here</strong></div>
+      <div class="hint">or click to browse · PNG, JPG, WebP</div>
+      <input type="file" id="fileInput" multiple accept="image/*">
+    </div>
+    <div class="file-list" id="fileList"></div>
+    <button class="btn btn-primary" id="submitBtn" disabled>Upload files to start</button>
+  </div>
+
+  <div class="card progress-section" id="progressSection">
+    <h3 id="progressHeading" style="margin-bottom:14px;">🔄 Scanning pages…</h3>
+    <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill" style="width:0%">0%</div></div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <div class="progress-overlay" id="progressOverlay">
+    <div class="progress-ring">
+      <svg viewBox="0 0 80 80">
+        <circle class="track" cx="40" cy="40" r="34"/>
+        <circle class="fill" id="ringFill" cx="40" cy="40" r="34"
+                stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+      </svg>
+      <div class="pct" id="ringPct">0%</div>
+    </div>
+    <div class="step-label" id="stepLabel">Initializing…</div>
+  </div>
+
+
+  <div class="card review-section" id="reviewSection">
+    <h3 style="margin-bottom:4px;">📋 Review Page Order</h3>
+    <p style="color:var(--muted); font-size:0.85rem; margin-bottom:12px;">
+      <span style="display:inline-block; width:10px; height:10px; background:var(--green); border-radius:50%; margin-right:4px;"></span>Confident
+      <span style="display:inline-block; width:10px; height:10px; background:var(--yellow); border-radius:50%; margin-left:12px; margin-right:4px;"></span>Unsure
+      <span style="display:inline-block; width:10px; height:10px; background:var(--border); border-radius:50%; margin-left:12px; margin-right:4px;"></span>Assumed
+      — drag to reorder · edit number to reassign
+    </p>
+    <div class="review-grid" id="reviewGrid"></div>
+    <div class="review-actions">
+      <button class="btn btn-primary" id="confirmBuildBtn">Build EPUB</button>
+      <button class="btn btn-secondary" id="rescanBtn">↻ Re-scan</button>
+    </div>
+  </div>
+
+  <div class="card done-section" id="doneSection">
+    <div class="big">✅</div>
+    <p id="doneText">EPUB ready!</p>
+    <a class="download-btn" id="downloadLink" href="#">⬇ Download EPUB</a>
+    <button class="btn btn-secondary" onclick="resetApp()" style="margin-top:12px;">Start over</button>
+  </div>
+
+  <div class="card error-section" id="errorSection">
+    <p id="errorText"></p>
+    <button class="btn btn-secondary" onclick="resetApp()">Try again</button>
+  </div>
+
+  <footer>
+    Built with <a href="https://github.com/naptha/tesseract.js" target="_blank">Tesseract.js</a>
+    &amp; <a href="https://github.com/Stuk/jszip" target="_blank">JSZip</a>
+  </footer>
+</div>
+
+<script>
+let pages = [];
+let isProcessing = false;
+let epubBlobUrl = null;
+let preferredRegion = null;
+let reviewPage = 0;
+const REVIEW_PAGE_SIZE = 20
+const RING_CIRCUMFERENCE = 2 * Math.PI * 34; // ≈ 213.6
+
+/* ── Preprocessing ── */
+function otsuThreshold(data, width, height) {
+  const hist = new Array(256).fill(0);
+  const totalPixels = width * height;
+  for (let i = 0; i < data.length; i += 4) hist[data[i]]++;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, maxVariance = 0, threshold = 0;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = totalPixels - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const variance = wB * wF * (mB - mF) ** 2;
+    if (variance > maxVariance) { maxVariance = variance; threshold = t; }
+  }
+  return threshold;
+}
+
+function preprocessCanvas(sourceCanvas, scale = 2) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = sourceCanvas.width * scale;
+  canvas.height = sourceCanvas.height * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const len = data.length;
+  const w = canvas.width, h = canvas.height;
+  for (let i = 0; i < len; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    data[i] = data[i + 1] = data[i + 2] = gray;
+  }
+  const grays = [];
+  for (let i = 0; i < len; i += 4) grays.push(data[i]);
+  grays.sort((a, b) => a - b);
+  const lo = grays[Math.floor(grays.length * 0.02)];
+  const hi = grays[Math.floor(grays.length * 0.98)];
+  const range = Math.max(hi - lo, 1);
+  for (let i = 0; i < len; i += 4) {
+    const stretched = Math.max(0, Math.min(255, ((data[i] - lo) / range) * 255));
+    data[i] = data[i + 1] = data[i + 2] = stretched;
+  }
+  const otsu = otsuThreshold(data, w, h);
+  for (let i = 0; i < len; i += 4) {
+    const val = data[i] > otsu ? 255 : 0;
+    data[i] = data[i + 1] = data[i + 2] = val;
+  }
+  let blackCount = 0;
+  const totalPixels = len / 4;
+  for (let i = 0; i < len; i += 4) if (data[i] === 0) blackCount++;
+  if (blackCount / totalPixels > 0.5) {
+    for (let i = 0; i < len; i += 4) {
+      data[i] = 255 - data[i];
+      data[i + 1] = 255 - data[i + 1];
+      data[i + 2] = 255 - data[i + 2];
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  filterComponents(canvas, 15, 5000);
+  return canvas;
+}
+
+function cropAndPreprocess(sourceCanvas, region, scale = 2) {
+  const w = sourceCanvas.width, h = sourceCanvas.height;
+  const crops = {
+    'bottom-left':   { x: 0,       y: h * 0.93, cw: w * 0.10, ch: h * 0.06 },
+    'bottom-right':  { x: w * 0.90, y: h * 0.93, cw: w * 0.10, ch: h * 0.06 },
+    'bottom-center': { x: w * 0.35, y: h * 0.93, cw: w * 0.30, ch: h * 0.06 },
+    'top-left':      { x: 0,       y: 0,        cw: w * 0.10, ch: h * 0.06 },
+    'top-right':     { x: w * 0.90, y: 0,        cw: w * 0.10, ch: h * 0.06 },
+  };
+  const c = crops[region];
+  if (!c) return preprocessCanvas(sourceCanvas, scale);
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = c.cw; cropCanvas.height = c.ch;
+  const cropCtx = cropCanvas.getContext('2d');
+  cropCtx.drawImage(sourceCanvas, c.x, c.y, c.cw, c.ch, 0, 0, c.cw, c.ch);
+  return preprocessCanvas(cropCanvas, scale);
+}
+
+function filterComponents(canvas, minArea, maxArea) {
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { width, height, data } = imageData;
+  const totalPixels = width * height;
+  const labels = new Int32Array(totalPixels).fill(-1);
+  const componentSizes = [];
+  let labelCount = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (data[idx * 4] === 0 && labels[idx] === -1) {
+        const stack = [idx]; let size = 0;
+        labels[idx] = labelCount;
+        while (stack.length > 0) {
+          const cur = stack.pop(); size++;
+          const cx = cur % width, cy = (cur - cx) / width;
+          const neighbors = [
+            cy > 0 ? cur - width : -1,
+            cy < height - 1 ? cur + width : -1,
+            cx > 0 ? cur - 1 : -1,
+            cx < width - 1 ? cur + 1 : -1,
+          ];
+          for (const nIdx of neighbors) {
+            if (nIdx >= 0 && data[nIdx * 4] === 0 && labels[nIdx] === -1) {
+              labels[nIdx] = labelCount; stack.push(nIdx);
+            }
+          }
+        }
+        componentSizes.push(size); labelCount++;
+      }
+    }
+  }
+  const keep = new Set();
+  for (let i = 0; i < componentSizes.length; i++) {
+    if (componentSizes[i] >= minArea && componentSizes[i] <= maxArea) keep.add(i);
+  }
+  const clean = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < totalPixels; i++) {
+    const pi = i * 4;
+    const val = (data[pi] === 0 && keep.has(labels[i])) ? 0 : 255;
+    clean[pi] = clean[pi + 1] = clean[pi + 2] = val; clean[pi + 3] = 255;
+  }
+  ctx.putImageData(new ImageData(clean, width, height), 0, 0);
+  return canvas;
+}
+
+/* ── OCR ── */
+async function detectPageNumberSmart(worker, sourceCanvas, scale, fileIndex, totalFiles, onLog) {
+  // Try preferred region first (fast path)
+  if (preferredRegion) {
+    const processedCanvas = cropAndPreprocess(sourceCanvas, preferredRegion, scale);
+    try {
+      const result = await worker.recognize(processedCanvas);
+      const words = result.data.words || [];
+      const highConfNums = words.filter(w => w.confidence > 70).flatMap(w => extractNumbers(w.text));
+      const allNums = words.flatMap(w => extractNumbers(w.text));
+      const numbers = highConfNums.length > 0 ? highConfNums : allNums;
+      if (numbers.length > 0) {
+        const expectedRange = Math.max(totalFiles * 0.5, 5);
+        const closeNums = numbers.filter(n => Math.abs(n - (fileIndex + 1)) <= expectedRange);
+        const pick = closeNums.length > 0 ? closeNums[0] : numbers[0];
+        const confidence = highConfNums.length > 0 ? 'high' : 'low';
+        if (onLog) onLog(`    → Quick hit in ${preferredRegion}: page ${pick}`);
+        return { num: pick, confidence, region: preferredRegion };
+      }
+    } catch (e) { /* fall through */ }
+    if (onLog) onLog(`    Preferred region (${preferredRegion}) missed — full scan`);
+  }
+
+  // Full scan
+  const result = await detectPageNumber(worker, sourceCanvas, scale, fileIndex, totalFiles, onLog);
+  if (result && result.confidence === 'high') {
+    preferredRegion = result.region;
+    if (onLog) onLog(`    ★ Locked preferred region: ${preferredRegion}`);
+  }
+  return result;
+}
+
+async function detectPageNumber(worker, sourceCanvas, scale, fileIndex, totalFiles, onLog) {
+  const regions = [
+    { name: 'bottom-left', priority: 0 },
+    { name: 'bottom-right', priority: 0 },
+    { name: 'bottom-center', priority: 1 },
+    { name: 'top-left', priority: 2 },
+    { name: 'top-right', priority: 2 },
+  ];
+  const candidates = [];
+  for (const region of regions) {
+    const processedCanvas = cropAndPreprocess(sourceCanvas, region.name, scale);
+    const scaled1xCanvas  = cropAndPreprocess(sourceCanvas, region.name, 1);
+    for (const canvas of [processedCanvas, scaled1xCanvas]) {
+      try {
+        const result = await worker.recognize(canvas);
+        const words = result.data.words || [];
+        const highConfNums = words.filter(w => w.confidence > 70).flatMap(w => extractNumbers(w.text));
+        const allNums = words.flatMap(w => extractNumbers(w.text));
+        const numbers = highConfNums.length > 0 ? highConfNums : allNums;
+        const debugOn = document.getElementById('debugMode').checked;
+        const debugCanvas = debugOn ? canvas : null;
+        if (onLog) onLog(`    ${region.name.padEnd(14)} found: [${numbers.join(', ')}]`, debugCanvas);
+
+        const isHighConf = highConfNums.length > 0;
+        for (const num of numbers) candidates.push({ num, priority: region.priority, source: isHighConf ? 'high' : 'low', region: region.name});
+
+        if (highConfNums.length > 0 && canvas === processedCanvas) break;
+      } catch (e) { if (onLog) onLog(`    ${region.name.padEnd(14)} OCR failed`); }
+    }
+  }
+  if (candidates.length === 0) return null;
+  const bestPriority = Math.min(...candidates.map(c => c.priority));
+  const topCandidates = candidates.filter(c => c.priority === bestPriority);
+  const expectedRange = Math.max(totalFiles * 0.5, 5);
+  const proximityBonus = topCandidates.map(c => {
+    const distance = Math.abs(c.num - (fileIndex + 1));
+    return { ...c, distance };
+  });
+  proximityBonus.sort((a, b) => {
+    const aClose = a.distance <= expectedRange;
+    const bClose = b.distance <= expectedRange;
+    if (aClose !== bClose) return aClose ? -1 : 1;
+    return a.num - b.num;
+  });
+  if (onLog) onLog(` -> Best candidate: ${proximityBonus[0].num}`);
+  return { num: proximityBonus[0].num, confidence: proximityBonus[0].source, region: proximityBonus[0].region };
+}
+
+function extractNumbers(text) {
+  const cleaned = text.replace(/[pP][gG]?/g, ' ');
+  const matches = cleaned.match(/\b\d+\b/g) || [];
+  return matches.map(Number).filter(n => n >= 1 && n <= 999);
+}
+
+/* ── EPUB ── */
+async function buildEpub(pages, title, author, epubLang, series, volume, description) {
+  const zip = new JSZip();
+  const total = pages.length;
+  const padWidth = String(total).length;
+
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+  zip.file('META-INF/container.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>`);
+
+  const manifestItems = [], spineItems = [], navPoints = [], chapters = [];
+  let coverImageId = null;
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i], pageNum = page.num;
+    const padded = String(pageNum).padStart(padWidth, '0');
+    const fileName = page.file.name.toLowerCase();
+    let ext = 'png', mime = 'image/png';
+    if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) { ext = 'jpg'; mime = 'image/jpeg'; }
+    else if (fileName.endsWith('.webp')) { ext = 'webp'; mime = 'image/webp'; }
+    else if (fileName.endsWith('.gif')) { ext = 'gif'; mime = 'image/gif'; }
+
+    const imageFileName = `${padded}.${ext}`;
+    const xhtmlFileName = `page_${padded}.xhtml`;
+    const imageId = `img_${padded}`, pageId = `page_${padded}`;
+
+    if (i === 0) coverImageId = imageId;
+
+    zip.file(`OEBPS/images/${imageFileName}`, await page.file.arrayBuffer());
+    zip.file(`OEBPS/${xhtmlFileName}`, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Page ${pageNum}</title>
+<style>body{margin:0;padding:0;text-align:center;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style>
+</head>
+<body><div><img src="images/${imageFileName}" alt="Page ${pageNum}"/></div></body>
+</html>`);
+
+    manifestItems.push(`    <item id="${imageId}" href="images/${imageFileName}" media-type="${mime}"${i === 0 ? ' properties="cover-image"' : ''}/>`);
+    manifestItems.push(`    <item id="${pageId}" href="${xhtmlFileName}" media-type="application/xhtml+xml"/>`);
+    spineItems.push(`    <itemref idref="${pageId}"/>`);
+    navPoints.push(`    <navPoint id="nav_${padded}" playOrder="${i + 1}"><navLabel><text>Page ${pageNum}</text></navLabel><content src="${xhtmlFileName}"/></navPoint>`);
+    chapters.push({ pageId, pageNum, xhtmlFileName });
+  }
+
+  const uniqueIdentifier = `comic-${title.replace(/\s+/g, '-')}`;
+  const now = new Date().toISOString().split('.')[0] + 'Z';
+
+  // Build metadata
+  let metadataExtra = '';
+  if (author) metadataExtra += `    <dc:creator>${escapeXml(author)}</dc:creator>\n`;
+  if (description) metadataExtra += `    <dc:description>${escapeXml(description)}</dc:description>\n`;
+  if (series) {
+    metadataExtra += `    <meta property="belongs-to-collection" id="c01">${escapeXml(series)}</meta>\n`;
+    metadataExtra += `    <meta refines="#c01" property="collection-type">series</meta>\n`;
+    if (volume) metadataExtra += `    <meta refines="#c01" property="group-position">${volume}</meta>\n`;
+  }
+
+  zip.file('OEBPS/content.opf', `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="BookId">${uniqueIdentifier}</dc:identifier>
+    <dc:title>${escapeXml(title)}</dc:title>
+    <dc:language>${escapeXml(epubLang)}</dc:language>
+    <dc:date>${now}</dc:date>
+${metadataExtra}    <meta property="dcterms:modified">${now}</meta>
+    <meta name="cover" content="${coverImageId}"/>
+  </metadata>
+  <manifest>
+${manifestItems.join('\n')}
+    <item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+  </manifest>
+  <spine toc="ncx">
+${spineItems.join('\n')}
+  </spine>
+</package>`);
+
+  zip.file('OEBPS/toc.ncx', `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="${uniqueIdentifier}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="${total}"/>
+    <meta name="dtb:maxPageNumber" content="${total}"/>
+  </head>
+  <docTitle><text>${escapeXml(title)}</text></docTitle>
+  <navMap>
+${navPoints.join('\n')}
+  </navMap>
+</ncx>`);
+
+  const navItems = chapters.map(c => `      <li><a href="${c.xhtmlFileName}">Page ${c.pageNum}</a></li>`).join('\n');
+  zip.file('OEBPS/toc.xhtml', `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>Table of Contents</title></head>
+<body>
+  <nav epub:type="toc"><h1>Table of Contents</h1><ol>
+${navItems}
+  </ol></nav>
+</body>
+</html>`);
+
+  return await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
+
+
+function escapeXml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+/* ── UI ── */
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const fileList = document.getElementById('fileList');
+const uploadCard = document.getElementById('uploadCard');
+const submitBtn = document.getElementById('submitBtn');
+const progressSection = document.getElementById('progressSection');
+const progressHeading = document.getElementById('progressHeading');
+const progressFill = document.getElementById('progressFill');
+const progressOverlay = document.getElementById('progressOverlay');
+const ringFill = document.getElementById('ringFill');
+const ringPct = document.getElementById('ringPct');
+const stepLabel = document.getElementById('stepLabel');
+const logBox = document.getElementById('logBox');
+const doneSection = document.getElementById('doneSection');
+const doneText = document.getElementById('doneText');
+const downloadLink = document.getElementById('downloadLink');
+const errorSection = document.getElementById('errorSection');
+const errorText = document.getElementById('errorText');
+const reviewSection = document.getElementById('reviewSection');
+const reviewGrid = document.getElementById('reviewGrid');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  fileInput.files = e.dataTransfer.files; updateFileList();
+});
+fileInput.addEventListener('change', updateFileList);
+
+function updateFileList() {
+  const files = fileInput.files;
+  if (!files || files.length === 0) {
+    fileList.textContent = '';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Upload files to start';
+    return;
+  }
+  const names = Array.from(files).map(f => f.name).sort();
+  const display = names.length <= 6 ? names.join(', ') : names.slice(0, 5).join(', ') + ` … +${names.length - 5} more`;
+  fileList.textContent = `${files.length} file${files.length > 1 ? 's' : ''}: ${display}`;
+  submitBtn.disabled = false;
+  submitBtn.textContent = `Build EPUB from ${files.length} page${files.length > 1 ? 's' : ''}`;
+}
+
+function setProgress(pct, label) {
+  progressFill.style.width = pct + '%';
+  progressFill.textContent = pct + '%';
+  if (label) progressHeading.textContent = label;
+  setOverlayProgress(pct, label);
+}
+
+function setOverlayProgress(pct, label) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const offset = RING_CIRCUMFERENCE * (1 - clamped / 100);
+  ringFill.style.strokeDashoffset = offset;
+  ringPct.textContent = Math.round(clamped) + '%';
+  if (label) stepLabel.textContent = label;
+}
+
+
+function addLog(text, cls = '', debugCanvas = null) {
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  const span = document.createElement('span'); span.textContent = text; div.appendChild(span);
+  if (debugCanvas) {
+    const img = document.createElement('img'); img.src = debugCanvas.toDataURL('image/png');
+    img.style.cssText = 'display:block; max-width:200px; border:1px solid var(--border); border-radius:4px; margin:4px 0 6px 0; image-rendering:pixelated;';
+    div.appendChild(img);
+  }
+  logBox.appendChild(div); logBox.scrollTop = logBox.scrollHeight;
+}
+function showSection(id) {
+  const debugOn = document.getElementById('debugMode').checked;
+  
+  // The minimal overlay shows during progress, hides otherwise
+  const showOverlay = (id === 'progressSection' || id === 'reviewSection') && !debugOn;
+  progressOverlay.classList.toggle('visible', showOverlay);
+
+  const hideUpload = ['progressSection', 'reviewSection', 'doneSection', 'errorSection'].includes(id);
+  uploadCard.style.display = hideUpload ? 'none' : '';
+  
+  [progressSection, doneSection, errorSection, reviewSection].forEach(el => {
+    if (el === progressSection) {
+      // Full log card only in debug mode
+      el.classList.toggle('visible', id === 'progressSection' && debugOn);
+    } else {
+      el.classList.toggle('visible', el.id === id);
+    }
+  });
+}
+
+
+/* ── Review UI ── */
+function showReview(pagesArr) {
+  reviewGrid.innerHTML = '';
+  reviewPage = Math.min(reviewPage, Math.floor((pagesArr.length - 1) / REVIEW_PAGE_SIZE));
+
+  const start = reviewPage * REVIEW_PAGE_SIZE;
+  const end = Math.min(start + REVIEW_PAGE_SIZE, pagesArr.length);
+  const slice = pagesArr.slice(start, end);
+
+  for (let i = 0; i < slice.length; i++) {
+    const page = slice[i];
+    const globalIdx = start + i;
+    const card = document.createElement('div');
+    card.className = 'review-card';
+    if (page.confidence === 'high') card.classList.add('conf-high');
+    else if (page.confidence === 'low') card.classList.add('conf-low');
+    card.draggable = true;
+    card.dataset.index = globalIdx;
+    const thumbSrc = page.thumbnail || URL.createObjectURL(page.file);
+    card.innerHTML = `
+      <img class="thumb" src="${thumbSrc}" alt="Page ${page.num}" loading="lazy">
+      <div class="page-label">Pg <input class="page-input" type="number" value="${page.num}" min="1" data-idx="${globalIdx}"></div>
+      <div class="file-name" title="${page.file.name}">${page.file.name}</div>`;
+    if (!page.thumbnail) {
+      card.querySelector('img').addEventListener('load', () => URL.revokeObjectURL(thumbSrc), { once: true });
+    }
+
+    card.addEventListener('dragstart', (e) => {
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', globalIdx.toString());
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      reviewGrid.querySelectorAll('.review-card').forEach(c => c.classList.remove('drag-over'));
+    });
+    card.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault(); card.classList.remove('drag-over');
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIdx = parseInt(card.dataset.index);
+      if (fromIdx === toIdx) return;
+      const [moved] = pages.splice(fromIdx, 1);
+      pages.splice(toIdx, 0, moved);
+      showReview(pages);
+    });
+
+    card.querySelector('.page-input').addEventListener('change', function() {
+      const newNum = parseInt(this.value);
+      if (!isNaN(newNum) && newNum >= 1 && newNum <= 999) {
+        pages[parseInt(this.dataset.idx)].num = newNum;
+      }
+    });
+    reviewGrid.appendChild(card);
+  }
+
+  // Pagination controls
+  const totalPages = Math.ceil(pagesArr.length / REVIEW_PAGE_SIZE);
+  const existingPagination = reviewSection.querySelector('.pagination');
+  if (existingPagination) existingPagination.remove();
+
+  if (totalPages > 1) {
+    const pagination = document.createElement('div');
+    pagination.className = 'pagination';
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '← Prev';
+    prevBtn.disabled = reviewPage === 0;
+    prevBtn.addEventListener('click', () => { reviewPage--; showReview(pagesArr); });
+    const info = document.createElement('span');
+    info.textContent = `Pages ${start + 1}–${end} of ${pagesArr.length}`;
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Next →';
+    nextBtn.disabled = reviewPage >= totalPages - 1;
+    nextBtn.addEventListener('click', () => { reviewPage++; showReview(pagesArr); });
+    pagination.append(prevBtn, info, nextBtn);
+    reviewGrid.after(pagination);
+  }
+}
+
+/* ── Main Pipeline ── */
+submitBtn.addEventListener('click', async () => {
+  if (isProcessing) return; isProcessing = true;
+  const files = Array.from(fileInput.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (files.length === 0) return;
+  const title = document.getElementById('title').value.trim() || 'Untitled Comic';
+  const author = document.getElementById('author').value.trim();
+  const ocrScale = parseInt(document.getElementById('ocrScale').value) || 2;
+  const lang = document.getElementById('lang').value || 'eng';
+  const skipOCR = document.getElementById('skipOCR').checked;
+
+  logBox.innerHTML = '';
+  setProgress(0, '🔄 Initializing…');
+  showSection('progressSection');
+  submitBtn.disabled = true;
+
+  let worker = null;
+  try {
+    const detected = {}; const undetected = [];
+    const confidenceByFile = {};
+
+    if (skipOCR) {
+      addLog('Skipping OCR — using filename order\n');
+      for (let i = 0; i < files.length; i++) {
+        detected[i + 1] = files[i];
+        confidenceByFile[files[i].name] = 'skipped';
+        addLog(`  Page ${i + 1}: ${files[i].name}`, 'ok');
+      }
+      setProgress(80, '🔄 Building EPUB…');
+    } else {
+      addLog('Initializing OCR…');
+      worker = await Tesseract.createWorker(lang, 1, { langPath: 'vendor/tessdata' });
+      await worker.setParameters({ tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: '7' });
+      addLog('✓ OCR engine ready\n');
+      setProgress(5, '🔄 Scanning page numbers…');
+      for (let i = 0; i < files.length; i++) {
+        addLog(`[${i + 1}/${files.length}] ${files[i].name}`);
+        const canvas = await fileToCanvas(files[i]);
+        const result = await detectPageNumberSmart(worker, canvas, ocrScale, i, files.length, (msg, dbgCanvas) => addLog(msg, '', dbgCanvas));
+        canvas.width = canvas.height = 0;
+        if (result !== null) {
+          if (detected[result.num]) {
+            addLog(`  ⚠ Page ${result.num} already taken — queuing as undetected`, 'warn');
+            undetected.push(files[i]);
+          } else {
+            detected[result.num] = files[i];
+            confidenceByFile[files[i].name] = result.confidence;
+            addLog(`  ✓ Detected page ${result.num}`, 'ok');
+          }
+        } else {
+          addLog(`  ✗ No page number detected`, 'fail');
+          undetected.push(files[i]);
+        }
+        setProgress(5 + Math.round((i + 1) / files.length * 75), `🔄 Scanning page ${i + 1}/${files.length}…`);
+      }
+      if (worker) { await worker.terminate(); worker = null; }
+      addLog(`\n${Object.keys(detected).length} detected, ${undetected.length} undetected`);
+      const allUsed = new Set(Object.keys(detected).map(Number)); let nextAvail = 1;
+      for (const file of undetected) {
+        while (allUsed.has(nextAvail)) nextAvail++;
+        detected[nextAvail] = file;
+        allUsed.add(nextAvail);
+        confidenceByFile[file.name] = 'assigned';
+        addLog(`  → Assigned page ${nextAvail} to '${file.name}'`);
+      }
+    }
+
+    pages = Object.entries(detected)
+      .map(([num, data]) => ({ num: parseInt(num), file: data, confidence: confidenceByFile[data.name] || 'assigned' }))
+      .sort((a, b) => a.num - b.num);
+
+    if (pages.length === 0) throw new Error('No pages to process — add at least one image file.');
+    addLog(`\n✓ Detected page order: ${pages.map(p => p.num).join(', ')}`);
+    setOverlayProgress(80, 'Waiting for review')
+    showReview(pages);
+    showSection('reviewSection');
+  } catch (err) {
+    console.error(err); errorText.textContent = `Error: ${err.message}`; showSection('errorSection');
+  } finally {
+    if (worker) { try { await worker.terminate(); } catch (_) {} }
+    isProcessing = false; submitBtn.disabled = false;
+  }
+});
+
+document.getElementById('confirmBuildBtn').addEventListener('click', async () => {
+  if (isProcessing) return; isProcessing = true;
+  const title = document.getElementById('title').value.trim() || 'Untitled Comic';
+  const author = document.getElementById('author').value.trim();
+  const lang = document.getElementById('lang').value || 'eng';
+  const epubLangMap = { eng: 'en'};
+  const epubLang = epubLangMap[lang] || 'en';
+  try {
+    setProgress(85, '🔄 Building EPUB…'); showSection('progressSection');
+    addLog('\nAssembling EPUB…');
+    const blob = await buildEpub(pages, title, author, epubLang);
+    setProgress(100, '✅ Done!');
+    if (epubBlobUrl) URL.revokeObjectURL(epubBlobUrl);
+    epubBlobUrl = URL.createObjectURL(blob);
+    doneText.textContent = `${pages.length} pages processed — EPUB ready (${formatBytes(blob.size)})`;
+    downloadLink.href = epubBlobUrl;
+    downloadLink.download = `${title.replace(/\s+/g, '_')}.epub`;
+    showSection('doneSection');
+  } catch (err) {
+    console.error(err); errorText.textContent = `Error: ${err.message}`; showSection('errorSection');
+  } finally { isProcessing = false; }
+});
+
+document.getElementById('rescanBtn').addEventListener('click', () => {
+  reviewSection.classList.remove('visible');
+  submitBtn.disabled = false;
+  submitBtn.click();
+});
+
+/* ── Utilities ── */
+function fileToCanvas(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url); resolve(canvas);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`Failed to load image: ${file.name}`)); };
+    img.src = url;
+  });
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+function resetApp() {
+  if (epubBlobUrl) { URL.revokeObjectURL(epubBlobUrl); epubBlobUrl = null; }
+  pages = []; isProcessing = false; preferredRegion = null;
+  fileInput.value = ''; fileList.textContent = '';
+  submitBtn.disabled = true; submitBtn.textContent = 'Upload files to start';
+  logBox.innerHTML = '';
+  progressFill.style.width = '0%'; progressFill.textContent = '0%';
+  progressOverlay.classList.remove('visible');
+  progressSection.classList.remove('visible');
+  uploadCard.style.display = '';
+  doneSection.classList.remove('visible');
+  errorSection.classList.remove('visible');
+  reviewSection.classList.remove('visible');
+  reviewPage = 0;
+}
+
+document.addEventListener('DOMContentLoaded',() => {
+  updateFileList();
+});
+
+</script>
+</body>
+</html>

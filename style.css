@@ -1,0 +1,251 @@
+
+  :root {
+    --bg: #0c0c10;
+    --surface: #16161e;
+    --surface2: #1e1e2a;
+    --border: #2a2a3c;
+    --text: #e4e4ec;
+    --muted: #7878a0;
+    --accent: #7c6aef;
+    --accent-hover: #9580ff;
+    --green: #4ade80;
+    --yellow: #facc15;
+    --red: #f87171;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 40px 16px;
+  }
+
+  .advanced-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.advanced-section summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  user-select: none;
+  list-style: none;
+  transition: color 0.2s;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.advanced-section[open] {
+  padding-bottom: 4px;
+}
+.advanced-section[open] summary {
+  margin-bottom: 16px;
+}
+.advanced-section summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-section summary::before {
+  content: '▶ ';
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.advanced-section[open] summary::before {
+  content: '▼ ';
+}
+.advanced-section summary:hover {
+  color: var(--text);
+}
+textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+textarea:focus {
+  border-color: var(--accent);
+}
+
+  .container { max-width: 640px; width: 100%; }
+  header { text-align: center; margin-bottom: 36px; }
+  header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 6px; }
+  header p { color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
+  .badge {
+    display: inline-block; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px; font-size: 0.75rem; color: var(--muted); margin-top: 10px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px; margin-bottom: 20px;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; margin-top: 16px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="number"], select {
+    width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 12px; }
+  .row > * { flex: 1; }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: var(--radius); padding: 44px 20px;
+    text-align: center; cursor: pointer; transition: all 0.25s; color: var(--muted); margin-top: 16px;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent); color: var(--text); background: #1a1a28;
+  }
+  .drop-zone .icon { font-size: 2.4rem; margin-bottom: 10px; }
+  .drop-zone .hint { font-size: 0.85rem; margin-top: 6px; }
+  .drop-zone input { display: none; }
+  .file-list {
+    margin-top: 12px; font-size: 0.82rem; color: var(--muted);
+    max-height: 80px; overflow-y: auto; line-height: 1.6;
+  }
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 20px;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .progress-section, .done-section, .error-section, .review-section { display: none; }
+  .progress-section.visible, .done-section.visible, .error-section.visible, .review-section.visible { display: block; }
+  .progress-bar-track {
+    background: var(--bg); border-radius: 8px; height: 22px; overflow: hidden; margin-bottom: 16px;
+  }
+  .progress-bar-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+    border-radius: 8px; transition: width 0.4s ease;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; color: white; min-width: 36px;
+  }
+
+  .progress-overlay {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    width: 160px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 16px 14px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 100;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+
+  .progress-overlay.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .progress-ring {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 10px;
+    position: relative;
+  }
+
+  .progress-ring svg {
+    transform: rotate(-90deg);
+    width: 80px;
+    height: 80px;
+  }
+ 
+  .progress-ring .track {
+    fill: none;
+    stroke: var(--bg);
+    stroke-width: 6;
+  }
+
+  .progress-ring .fill {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 6;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.4s ease;
+  }
+
+  .progress-ring .pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .progress-overlay .step-label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.3;
+  }
+
+  .progress-section h3 {
+    text-align: center;
+  }
+
+  .review-section h3 {
+    text-align: center;
+  }
+
+  .log-box {
+    background: var(--bg); border-radius: 8px; padding: 14px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.78rem; max-height: 400px; overflow-y: auto; line-height: 1.7; color: var(--muted);
+  }
+  .log-box .ok { color: var(--green); }
+  .log-box .warn { color: var(--yellow); }
+  .log-box .fail { color: var(--red); }
+  .done-section { text-align: center; }
+  .done-section .big { font-size: 3rem; margin-bottom: 10px; }
+  .done-section p { color: var(--muted); margin-bottom: 16px; }
+  .download-btn {
+    display: inline-block; padding: 14px 36px; background: var(--accent); color: white;
+    border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 1rem; transition: background 0.2s;
+  }
+  .download-btn:hover { background: var(--accent-hover); }
+  .error-section p { color: var(--red); text-align: center; padding: 16px; }
+
+  /* Review */
+  .review-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 12px; margin-top: 16px;
+  }
+  .review-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+    text-align: center; cursor: grab; transition: border-color 0.2s, transform 0.15s, opacity 0.15s; user-select: none;
+  }
+  .review-card:hover { border-color: var(--accent); }
+  .review-card.dragging { opacity: 0.4; transform: scale(0.95); }
+  .review-card.drag-over { border-color: var(--accent-hover); background: #1a1a28; }
+  .review-card.conf-high { border-color: var(--green); }
+  .review-card.conf-low  { border-color: var(--yellow); }
+  .review-card .thumb { width: 100%; aspect-ratio: 3/4; object-fit: contain; border-radius: 4px; background: var(--surface2); margin-bottom: 6px; }
+  .review-card .page-label { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+  .review-card .page-input { width: 42px; padding: 2px 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.78rem; text-align: center; outline: none; }
+  .review-card .page-input:focus { border-color: var(--accent); }
+  .review-card .file-name { font-size: 0.65rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; opacity: 0.6; }
+  .review-actions { display: flex; gap: 12px; margin-top: 20px; }
+  .review-actions .btn { margin-top: 0; }
+
+  footer { margin-top: 40px; text-align: center; color: var(--muted); font-size: 0.78rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
