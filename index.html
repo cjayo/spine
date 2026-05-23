@@ -403,7 +403,7 @@ async function buildEpub(pages, title, author, epubLang, series, volume, descrip
     chapters.push({ pageId, pageNum, xhtmlFileName });
   }
 
-  const uniqueIdentifier = `comic-${title.replace(/\s+/g, '-')}`;
+  const uniqueIdentifier = crypto.randomUUID;
   const now = new Date().toISOString().split('.')[0] + 'Z';
 
   // Build metadata
