@@ -133,28 +133,6 @@ let cancelRequested = false;
 const REVIEW_PAGE_SIZE = 20
 const RING_CIRCUMFERENCE = 2 * Math.PI * 34; // ≈ 213.6
 
-/* ── Preprocessing ── */
-function otsuThreshold(data, width, height) {
-  const hist = new Array(256).fill(0);
-  const totalPixels = width * height;
-  for (let i = 0; i < data.length; i += 4) hist[data[i]]++;
-  let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * hist[i];
-  let sumB = 0, wB = 0, maxVariance = 0, threshold = 0;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (wB === 0) continue;
-    const wF = totalPixels - wB;
-    if (wF === 0) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const variance = wB * wF * (mB - mF) ** 2;
-    if (variance > maxVariance) { maxVariance = variance; threshold = t; }
-  }
-  return threshold;
-}
-
 const NUM_WORKERS = navigator.hardwareConcurrency || 4;
 const preprocessWorkers = [];
 const pendingCallbacks = new Map();
@@ -222,53 +200,6 @@ async function cropAndPreprocessAsync(sourceCanvas, region, scale = 2) {
   const resultData = await dispatchToWorker(imageData, 15, 5000);
   ctx.putImageData(resultData, 0, 0);
   return scaledCanvas;
-}
-
-function filterComponents(canvas, minArea, maxArea) {
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { width, height, data } = imageData;
-  const totalPixels = width * height;
-  const labels = new Int32Array(totalPixels).fill(-1);
-  const componentSizes = [];
-  let labelCount = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      if (data[idx * 4] === 0 && labels[idx] === -1) {
-        const stack = [idx]; let size = 0;
-        labels[idx] = labelCount;
-        while (stack.length > 0) {
-          const cur = stack.pop(); size++;
-          const cx = cur % width, cy = (cur - cx) / width;
-          const neighbors = [
-            cy > 0 ? cur - width : -1,
-            cy < height - 1 ? cur + width : -1,
-            cx > 0 ? cur - 1 : -1,
-            cx < width - 1 ? cur + 1 : -1,
-          ];
-          for (const nIdx of neighbors) {
-            if (nIdx >= 0 && data[nIdx * 4] === 0 && labels[nIdx] === -1) {
-              labels[nIdx] = labelCount; stack.push(nIdx);
-            }
-          }
-        }
-        componentSizes.push(size); labelCount++;
-      }
-    }
-  }
-  const keep = new Set();
-  for (let i = 0; i < componentSizes.length; i++) {
-    if (componentSizes[i] >= minArea && componentSizes[i] <= maxArea) keep.add(i);
-  }
-  const clean = new Uint8ClampedArray(data.length);
-  for (let i = 0; i < totalPixels; i++) {
-    const pi = i * 4;
-    const val = (data[pi] === 0 && keep.has(labels[i])) ? 0 : 255;
-    clean[pi] = clean[pi + 1] = clean[pi + 2] = val; clean[pi + 3] = 255;
-  }
-  ctx.putImageData(new ImageData(clean, width, height), 0, 0);
-  return canvas;
 }
 
 /* ── OCR ── */
@@ -758,10 +689,6 @@ submitBtn.addEventListener('click', async () => {
       }
     }
 
-    if (cancelRequested) {
-      addLog(`\n⏹ Cancelled after ${pages.length} pages`);
-    }
-
     pages = Object.entries(detected)
       .map(([num, data]) => ({ num: parseInt(num), file: data, confidence: confidenceByFile[data.name] || 'assigned' }))
       .sort((a, b) => a.num - b.num);
@@ -774,7 +701,14 @@ submitBtn.addEventListener('click', async () => {
     showSection('reviewSection');
 
   } catch (err) {
-    console.error(err); errorText.textContent = `Error: ${err.message}`; showSection('errorSection');
+    if (cancelRequested) {
+      errorText.textContent = 'Processing cancelled';
+      showSection('errorSection');
+    } else{
+      console.error(err);
+      errorText.textContent = `Error: ${err.message}`;
+      showSection('errorSection');
+    }
   } finally {
     if (tesseractWorker) { try { await tesseractWorker.terminate(); } catch (_) {} }
     isProcessing = false; submitBtn.disabled = false;

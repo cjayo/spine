@@ -178,7 +178,7 @@ textarea:focus {
   }
 
   .progress-ring:hover .pct {
-    display: none;
+    cursor: default;
   }
 
   .progress-ring .cancel-icon {
@@ -193,6 +193,14 @@ textarea:focus {
     display: block;
   }
 
+  .pagination{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 6px;
+  }
+  
   .progress-ring svg {
     transform: rotate(-90deg);
     width: 80px;
